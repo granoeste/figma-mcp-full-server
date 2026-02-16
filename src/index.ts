@@ -560,12 +560,12 @@ class FigmaMCPServer {
 
 // 启动服务器
 async function main() {
-  const accessToken = process.argv[2] || process.env.FIGMA_TOKEN;
-  
+  // Security: Only use environment variable for token to prevent exposure in process listings
+  const accessToken = process.env.FIGMA_TOKEN;
+
   if (!accessToken) {
-    console.error('错误: 缺少Figma访问令牌');
-    console.error('使用方法: node build/index.js <FIGMA_ACCESS_TOKEN>');
-    console.error('或设置环境变量: FIGMA_TOKEN');
+    console.error('Error: Missing Figma access token');
+    console.error('Please set the FIGMA_TOKEN environment variable');
     process.exit(1);
   }
 

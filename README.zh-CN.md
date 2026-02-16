@@ -16,10 +16,12 @@
 
 ## 安装和运行方式
 
+> **安全提示**：Figma令牌必须通过 `FIGMA_TOKEN` 环境变量提供。为防止令牌在进程列表和shell历史中暴露，不支持命令行参数传递令牌。
+
 ### 方式一：通过 npx 运行（推荐，无需安装）
 
 ```bash
-npx figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here npx figma-mcp-full-server
 ```
 
 ### 方式二：全局安装后运行
@@ -29,7 +31,7 @@ npx figma-mcp-full-server figd_your_figma_token_here
 npm install -g figma-mcp-full-server
 
 # 运行
-figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here figma-mcp-full-server
 ```
 
 ### 方式三：本地项目安装
@@ -39,9 +41,7 @@ figma-mcp-full-server figd_your_figma_token_here
 npm install figma-mcp-full-server
 
 # 运行
-npx figma-mcp-full-server figd_your_figma_token_here
-# 或者
-node_modules/.bin/figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here npx figma-mcp-full-server
 ```
 
 ### 方式四：从源码运行（开发用）
@@ -53,9 +53,10 @@ npm install
 npm run build
 
 # 运行
-npm start figd_your_figma_token_here
+export FIGMA_TOKEN=figd_your_figma_token_here
+npm start
 # 或者
-node build/index.js figd_your_figma_token_here
+node build/index.js
 ```
 
 ## 快速开始
@@ -253,7 +254,7 @@ https://www.figma.com/design/EXAMPLE_FILE_ID/Design-Name?node-id=123-456&t=abc12
 
 ```bash
 cd /path/to/figma-mcp
-node build/index.js figd_your_token_here
+FIGMA_TOKEN=figd_your_token_here node build/index.js
 ```
 
 应该看到: `Figma MCP服务器已启动`

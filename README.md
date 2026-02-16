@@ -16,10 +16,12 @@ A Model Context Protocol (MCP) server that integrates with the Figma API to expo
 
 ## Install and Run
 
+> **Security Note**: The Figma token must be provided via the `FIGMA_TOKEN` environment variable. Command-line arguments are not supported to prevent token exposure in process listings and shell history.
+
 ### Option 1: Run via npx (recommended, no install)
 
 ```bash
-npx figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here npx figma-mcp-full-server
 ```
 
 ### Option 2: Global install
@@ -29,7 +31,7 @@ npx figma-mcp-full-server figd_your_figma_token_here
 npm install -g figma-mcp-full-server
 
 # Run
-figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here figma-mcp-full-server
 ```
 
 ### Option 3: Local project install
@@ -39,9 +41,7 @@ figma-mcp-full-server figd_your_figma_token_here
 npm install figma-mcp-full-server
 
 # Run
-npx figma-mcp-full-server figd_your_figma_token_here
-# or
-node_modules/.bin/figma-mcp-full-server figd_your_figma_token_here
+FIGMA_TOKEN=figd_your_figma_token_here npx figma-mcp-full-server
 ```
 
 ### Option 4: Run from source (for development)
@@ -53,9 +53,10 @@ npm install
 npm run build
 
 # Run
-npm start figd_your_figma_token_here
+export FIGMA_TOKEN=figd_your_figma_token_here
+npm start
 # or
-node build/index.js figd_your_figma_token_here
+node build/index.js
 ```
 
 ## Quick Start
@@ -251,7 +252,7 @@ This MCP server provides 7 tools:
 
 ```bash
 cd /path/to/figma-mcp
-node build/index.js figd_your_token_here
+FIGMA_TOKEN=figd_your_token_here node build/index.js
 ```
 
 You should see: `Figma MCP server started`
