@@ -12,6 +12,124 @@ import { FigmaImageExtractor, ImageExportOptions } from './image-extractor.js';
 import { FigmaStyleExtractor } from './style-extractor.js';
 import { FigmaElementExtractor } from './element-extractor.js';
 
+// ============================================================================
+// Input Validation (Security: Runtime validation for all user inputs)
+// ============================================================================
+
+const VALID_FORMATS = ['png', 'jpg', 'svg', 'pdf'] as const;
+type ImageFormat = typeof VALID_FORMATS[number];
+
+interface ValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+function validateUrl(url: unknown): ValidationResult {
+  if (typeof url !== 'string') {
+    return { valid: false, error: 'URL must be a string' };
+  }
+  if (!url.trim()) {
+    return { valid: false, error: 'URL cannot be empty' };
+  }
+  try {
+    const parsed = new URL(url);
+    // Only allow Figma URLs
+    if (!parsed.hostname.endsWith('figma.com')) {
+      return { valid: false, error: 'URL must be a valid Figma URL (*.figma.com)' };
+    }
+    if (parsed.protocol !== 'https:') {
+      return { valid: false, error: 'URL must use HTTPS' };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+}
+
+function validateFormat(format: unknown): ValidationResult {
+  if (format === undefined) {
+    return { valid: true }; // Optional, will use default
+  }
+  if (typeof format !== 'string') {
+    return { valid: false, error: 'Format must be a string' };
+  }
+  if (!VALID_FORMATS.includes(format as ImageFormat)) {
+    return { valid: false, error: `Format must be one of: ${VALID_FORMATS.join(', ')}` };
+  }
+  return { valid: true };
+}
+
+function validateScale(scale: unknown): ValidationResult {
+  if (scale === undefined) {
+    return { valid: true }; // Optional, will use default
+  }
+  if (typeof scale !== 'number') {
+    return { valid: false, error: 'Scale must be a number' };
+  }
+  if (scale < 0.01 || scale > 4) {
+    return { valid: false, error: 'Scale must be between 0.01 and 4' };
+  }
+  if (!Number.isFinite(scale)) {
+    return { valid: false, error: 'Scale must be a finite number' };
+  }
+  return { valid: true };
+}
+
+function validateFileId(fileId: unknown): ValidationResult {
+  if (typeof fileId !== 'string') {
+    return { valid: false, error: 'File ID must be a string' };
+  }
+  if (!fileId.trim()) {
+    return { valid: false, error: 'File ID cannot be empty' };
+  }
+  // Figma file IDs are alphanumeric
+  if (!/^[a-zA-Z0-9]+$/.test(fileId)) {
+    return { valid: false, error: 'File ID contains invalid characters' };
+  }
+  return { valid: true };
+}
+
+function validateNodeIds(nodeIds: unknown): ValidationResult {
+  if (!Array.isArray(nodeIds)) {
+    return { valid: false, error: 'Node IDs must be an array' };
+  }
+  if (nodeIds.length === 0) {
+    return { valid: false, error: 'Node IDs array cannot be empty' };
+  }
+  if (nodeIds.length > 500) {
+    return { valid: false, error: 'Too many node IDs (maximum 500)' };
+  }
+  for (let i = 0; i < nodeIds.length; i++) {
+    if (typeof nodeIds[i] !== 'string') {
+      return { valid: false, error: `Node ID at index ${i} must be a string` };
+    }
+    if (!nodeIds[i].trim()) {
+      return { valid: false, error: `Node ID at index ${i} cannot be empty` };
+    }
+  }
+  return { valid: true };
+}
+
+function validateBoolean(value: unknown, fieldName: string): ValidationResult {
+  if (value === undefined) {
+    return { valid: true }; // Optional
+  }
+  if (typeof value !== 'boolean') {
+    return { valid: false, error: `${fieldName} must be a boolean` };
+  }
+  return { valid: true };
+}
+
+// Helper to run multiple validations and return first error
+function runValidations(...validations: ValidationResult[]): string | null {
+  for (const result of validations) {
+    if (!result.valid) {
+      return result.error || 'Validation failed';
+    }
+  }
+  return null;
+}
+
 class FigmaMCPServer {
   private server: Server;
   private figmaService: FigmaService;
@@ -231,14 +349,29 @@ class FigmaMCPServer {
     });
   }
 
-  private async handleGetImage(args: any) {
-    const { url, format = 'png', scale = 1 } = args;
+  private async handleGetImage(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
+    const format = (params.format ?? 'png') as ImageFormat;
+    const scale = (params.scale ?? 1) as number;
+
+    // Validate inputs
+    const validationError = runValidations(
+      validateUrl(url),
+      validateFormat(params.format),
+      validateScale(params.scale)
+    );
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
 
     try {
-      console.error(`开始处理图片请求: ${url}`);
-      
+      console.error(`Processing image request`);
+
       const options: ImageExportOptions = { format, scale };
-      const results = await this.imageExtractor.getImageFromUrl(url, options);
+      const results = await this.imageExtractor.getImageFromUrl(url as string, options);
 
       if (results.length === 0) {
         throw new Error('未找到可导出的图片');
@@ -291,10 +424,23 @@ class FigmaMCPServer {
     }
   }
 
-  private async handleGetStyles(args: any) {
-    const { url, generateCSS = false } = args;
+  private async handleGetStyles(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
+    const generateCSS = (params.generateCSS ?? false) as boolean;
 
-    const styleData = await this.styleExtractor.getStylesFromUrl(url);
+    // Validate inputs
+    const validationError = runValidations(
+      validateUrl(url),
+      validateBoolean(params.generateCSS, 'generateCSS')
+    );
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
+
+    const styleData = await this.styleExtractor.getStylesFromUrl(url as string);
 
     let cssCode = '';
     if (generateCSS && styleData.styles.length > 0) {
@@ -325,11 +471,28 @@ class FigmaMCPServer {
     };
   }
 
-  private async handleExportMultipleImages(args: any) {
-    const { fileId, nodeIds, format = 'png', scale = 1 } = args;
+  private async handleExportMultipleImages(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const fileId = params.fileId;
+    const nodeIds = params.nodeIds;
+    const format = (params.format ?? 'png') as ImageFormat;
+    const scale = (params.scale ?? 1) as number;
+
+    // Validate inputs
+    const validationError = runValidations(
+      validateFileId(fileId),
+      validateNodeIds(nodeIds),
+      validateFormat(params.format),
+      validateScale(params.scale)
+    );
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
 
     const options: ImageExportOptions = { format, scale };
-    const results = await this.imageExtractor.getMultipleImages(fileId, nodeIds, options);
+    const results = await this.imageExtractor.getMultipleImages(fileId as string, nodeIds as string[], options);
 
     return {
       content: [
@@ -347,10 +510,19 @@ class FigmaMCPServer {
     };
   }
 
-  private async handleGetFileInfo(args: any) {
-    const { url } = args;
+  private async handleGetFileInfo(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
 
-    const urlInfo = this.figmaService.parseUrl(url);
+    // Validate inputs
+    const validationError = runValidations(validateUrl(url));
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
+
+    const urlInfo = this.figmaService.parseUrl(url as string);
     const file = await this.figmaService.getFile(urlInfo.fileId);
 
     return {
@@ -374,15 +546,25 @@ class FigmaMCPServer {
     };
   }
 
-  private async handleGetNodeImages(args: any) {
-    const { url } = args;
+  private async handleGetNodeImages(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
+
+    // Validate inputs
+    const validationError = runValidations(validateUrl(url));
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
 
     try {
-      console.error(`开始获取节点图片资源: ${url}`);
-      
+      console.error(`Processing node images request`);
+
+      const urlInfo = this.figmaService.parseUrl(url as string);
       const images = await this.elementExtractor.getNodeImages(
-        this.figmaService.parseUrl(url).fileId,
-        this.figmaService.parseUrl(url).nodeId!
+        urlInfo.fileId,
+        urlInfo.nodeId!
       );
 
       console.error(`成功获取 ${images.length} 个图片资源`);
@@ -427,13 +609,22 @@ class FigmaMCPServer {
     }
   }
 
-  private async handleGetNodeSVG(args: any) {
-    const { url } = args;
+  private async handleGetNodeSVG(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
+
+    // Validate inputs
+    const validationError = runValidations(validateUrl(url));
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
 
     try {
-      console.error(`开始获取节点SVG数据: ${url}`);
-      
-      const urlInfo = this.figmaService.parseUrl(url);
+      console.error(`Processing SVG request`);
+
+      const urlInfo = this.figmaService.parseUrl(url as string);
       if (!urlInfo.nodeId) {
         throw new Error('URL中缺少node-id参数');
       }
@@ -483,13 +674,26 @@ class FigmaMCPServer {
     }
   }
 
-  private async handleExtractNodeElements(args: any) {
-    const { url, includeDetails = false } = args;
+  private async handleExtractNodeElements(args: unknown) {
+    const params = args as Record<string, unknown>;
+    const url = params.url;
+    const includeDetails = (params.includeDetails ?? false) as boolean;
+
+    // Validate inputs
+    const validationError = runValidations(
+      validateUrl(url),
+      validateBoolean(params.includeDetails, 'includeDetails')
+    );
+    if (validationError) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: validationError }, null, 2) }],
+      };
+    }
 
     try {
-      console.error(`开始提取节点设计元素: ${url}`);
-      
-      const elements = await this.elementExtractor.getElementsFromUrl(url);
+      console.error(`Processing element extraction request`);
+
+      const elements = await this.elementExtractor.getElementsFromUrl(url as string);
       
       console.error(`成功提取设计元素: ${elements.totalElements} 个`);
       
