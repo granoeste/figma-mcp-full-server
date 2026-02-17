@@ -15,15 +15,27 @@ npm run build
 npm run dev
 
 # Start the server (requires build first)
-npm start <FIGMA_TOKEN>
+npm start
 # or
-node build/index.js <FIGMA_TOKEN>
+node build/index.js
 
 # Run via npx (for users)
-npx figma-mcp-full-server <FIGMA_TOKEN>
+npx figma-mcp-full-server
 ```
 
-The Figma token can be passed as a command-line argument or via the `FIGMA_TOKEN` environment variable.
+The Figma token must be provided via the `FIGMA_TOKEN` environment variable.
+
+## Testing
+
+```bash
+# SVG export test (standalone)
+FIGMA_TOKEN=figd_xxx npx tsx test-svg-export.ts "<figma-url>" [options]
+
+# Options:
+#   --full, -f       Output full SVG (no truncation)
+#   --output=FILE    Save SVG to file
+#   --help           Show help
+```
 
 ## Architecture Overview
 
@@ -38,6 +50,8 @@ src/
 ├── image-extractor.ts    # Image export functionality (single/batch)
 ├── style-extractor.ts    # Style data extraction and CSS generation
 └── element-extractor.ts  # Design element analysis (images, vectors, components)
+
+test-svg-export.ts        # Standalone SVG export test tool
 ```
 
 ### Key Patterns
@@ -59,6 +73,33 @@ src/
 - Tools are defined in `ListToolsRequestSchema` handler with JSON Schema input validation
 - Tool execution is handled in `CallToolRequestSchema` handler via switch statement
 - All responses follow `{success: boolean, data?: {...}, error?: string}` format
+
+### Security Features
+
+The server implements multiple security measures:
+
+**Input Validation**
+- Runtime validation for all handler parameters (URL, format, scale, fileId, nodeIds)
+- URL must be valid HTTPS Figma URLs (`*.figma.com`)
+- Scale limited to 0.01-4 range
+- Node IDs array limited to 500 items
+
+**SSRF Protection**
+- Allowlist of trusted Figma domains for external resource fetching
+- Only HTTPS URLs permitted
+
+**Response Size Limits**
+- SVG responses capped at 1MB (`MAX_SVG_SIZE_BYTES`)
+- Prevents memory exhaustion from large exports
+
+**Recursion Depth Limit**
+- Node tree traversal limited to 100 levels (`MAX_RECURSION_DEPTH`)
+- Prevents stack overflow from deeply nested structures
+
+**Error Sanitization**
+- Internal error details logged to stderr only
+- Client responses receive sanitized, categorized error messages
+- Prevents information leakage about server internals
 
 ### Available MCP Tools
 

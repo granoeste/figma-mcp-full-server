@@ -64,10 +64,27 @@ node build/index.js
 ### 1. Get a Figma access token
 
 1. Log in to [Figma](https://figma.com)
-2. Open Settings
-3. Find the "Personal access tokens" section
-4. Click "Create new token"
-5. Copy the token (starts with `figd_`)
+2. Go to **Settings** → **Security**
+3. Find the **Personal access tokens** section
+4. Click **Generate new token**
+5. Enter a token name (e.g., "MCP Server")
+6. **Set the required scopes** (see below)
+7. Click **Generate token**
+8. Copy the token (starts with `figd_`)
+
+#### Required Scopes
+
+| Scope | Required | Description |
+|-------|----------|-------------|
+| `file_content:read` | ✅ Yes | Read file contents, nodes, and export images |
+
+This MCP server uses the following Figma API endpoints, all requiring `file_content:read`:
+- `GET /v1/files/:file_key` — Get file data
+- `GET /v1/files/:file_key/nodes` — Get specific node data
+- `GET /v1/files/:file_key/images` — Get image fill references
+- `GET /v1/images/:file_key` — Export images (PNG/JPG/SVG/PDF)
+
+> **Note**: The deprecated `files:read` scope also works but is not recommended. Use `file_content:read` for better security.
 
 ### 2. Configure in Claude Desktop
 

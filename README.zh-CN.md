@@ -64,10 +64,27 @@ node build/index.js
 ### 1. 获取Figma访问令牌
 
 1. 登录 [Figma](https://figma.com)
-2. 进入设置页面 (Settings)
-3. 找到 "Personal access tokens" 部分
-4. 点击 "Create new token"
-5. 复制生成的令牌（以 `figd_` 开头）
+2. 进入 **Settings** → **Security**
+3. 找到 **Personal access tokens** 部分
+4. 点击 **Generate new token**
+5. 输入令牌名称（例如："MCP Server"）
+6. **设置所需的权限范围**（见下表）
+7. 点击 **Generate token**
+8. 复制生成的令牌（以 `figd_` 开头）
+
+#### 所需权限范围 (Scopes)
+
+| 权限范围 | 是否必须 | 说明 |
+|---------|---------|------|
+| `file_content:read` | ✅ 必须 | 读取文件内容、节点数据、导出图片 |
+
+本 MCP 服务器使用以下 Figma API 端点，均需要 `file_content:read` 权限：
+- `GET /v1/files/:file_key` — 获取文件数据
+- `GET /v1/files/:file_key/nodes` — 获取特定节点数据
+- `GET /v1/files/:file_key/images` — 获取图片填充引用
+- `GET /v1/images/:file_key` — 导出图片 (PNG/JPG/SVG/PDF)
+
+> **注意**：已弃用的 `files:read` 权限也可以使用，但不推荐。请使用 `file_content:read` 以获得更好的安全性。
 
 ### 2. 在Claude Desktop中配置
 
