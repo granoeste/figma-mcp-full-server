@@ -130,6 +130,108 @@ function runValidations(...validations: ValidationResult[]): string | null {
   return null;
 }
 
+// ============================================================================
+// Error Sanitization (Security: Hide internal details from client responses)
+// ============================================================================
+
+// Error codes for categorization (logged internally, not exposed)
+enum ErrorCategory {
+  AUTHENTICATION = 'AUTH',
+  PERMISSION = 'PERMISSION',
+  NOT_FOUND = 'NOT_FOUND',
+  VALIDATION = 'VALIDATION',
+  RATE_LIMIT = 'RATE_LIMIT',
+  SERVER_ERROR = 'SERVER',
+  NETWORK = 'NETWORK',
+  UNKNOWN = 'UNKNOWN',
+}
+
+interface SanitizedError {
+  userMessage: string;
+  category: ErrorCategory;
+}
+
+function categorizeError(error: unknown): SanitizedError {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const lowerMessage = errorMessage.toLowerCase();
+
+  // Check for specific error patterns and map to safe messages
+  if (lowerMessage.includes('403') || lowerMessage.includes('access denied') || lowerMessage.includes('访问被拒绝')) {
+    return {
+      userMessage: 'Access denied. Please check your Figma token and file permissions.',
+      category: ErrorCategory.PERMISSION,
+    };
+  }
+
+  if (lowerMessage.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid token')) {
+    return {
+      userMessage: 'Authentication failed. Please verify your Figma access token.',
+      category: ErrorCategory.AUTHENTICATION,
+    };
+  }
+
+  if (lowerMessage.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('未找到')) {
+    return {
+      userMessage: 'Resource not found. Please verify the file ID and node ID are correct.',
+      category: ErrorCategory.NOT_FOUND,
+    };
+  }
+
+  if (lowerMessage.includes('429') || lowerMessage.includes('rate limit') || lowerMessage.includes('too many')) {
+    return {
+      userMessage: 'Rate limit exceeded. Please wait a moment and try again.',
+      category: ErrorCategory.RATE_LIMIT,
+    };
+  }
+
+  if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504')) {
+    return {
+      userMessage: 'Figma service is temporarily unavailable. Please try again later.',
+      category: ErrorCategory.SERVER_ERROR,
+    };
+  }
+
+  if (lowerMessage.includes('network') || lowerMessage.includes('timeout') || lowerMessage.includes('econnrefused')) {
+    return {
+      userMessage: 'Network error. Please check your connection and try again.',
+      category: ErrorCategory.NETWORK,
+    };
+  }
+
+  if (lowerMessage.includes('security:')) {
+    // Security errors from our validation (safe to pass through)
+    return {
+      userMessage: errorMessage.replace(/^security:\s*/i, ''),
+      category: ErrorCategory.VALIDATION,
+    };
+  }
+
+  if (lowerMessage.includes('node-id') || lowerMessage.includes('url') || lowerMessage.includes('format')) {
+    return {
+      userMessage: 'Invalid request parameters. Please check the URL format and parameters.',
+      category: ErrorCategory.VALIDATION,
+    };
+  }
+
+  // Default: generic error (don't expose internal details)
+  return {
+    userMessage: 'An error occurred while processing your request. Please try again.',
+    category: ErrorCategory.UNKNOWN,
+  };
+}
+
+function sanitizeErrorForResponse(error: unknown, operationContext: string): string {
+  // Log full error details to stderr for debugging (not visible to client)
+  const fullError = error instanceof Error ? error.message : String(error);
+  console.error(`[${operationContext}] Error details (internal): ${fullError}`);
+
+  // Return sanitized message
+  const { userMessage, category } = categorizeError(error);
+  console.error(`[${operationContext}] Category: ${category}`);
+
+  return userMessage;
+}
+
 class FigmaMCPServer {
   private server: Server;
   private figmaService: FigmaService;
@@ -334,14 +436,15 @@ class FigmaMCPServer {
             return await this.handleExtractNodeElements(args);
 
           default:
-            throw new Error(`未知的工具: ${name}`);
+            throw new Error(`Unknown tool: ${name}`);
         }
       } catch (error) {
+        const sanitizedMessage = sanitizeErrorForResponse(error, `tool:${name}`);
         return {
           content: [
             {
               type: 'text',
-              text: `错误: ${error instanceof Error ? error.message : '未知错误'}`,
+              text: JSON.stringify({ success: false, error: sanitizedMessage }, null, 2),
             },
           ],
         };
@@ -398,22 +501,21 @@ class FigmaMCPServer {
         ],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      console.error(`图片获取失败: ${errorMessage}`);
-      
+      const sanitizedMessage = sanitizeErrorForResponse(error, 'get_figma_image');
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               success: false,
-              error: errorMessage,
+              error: sanitizedMessage,
               troubleshooting: {
                 commonIssues: [
-                  '检查Figma URL是否包含node-id参数',
-                  '确认Figma token是否有效',
-                  '验证对该文件是否有访问权限',
-                  '检查节点是否存在且可见'
+                  'Ensure the Figma URL contains a node-id parameter',
+                  'Verify your Figma token is valid',
+                  'Check that you have access to the file',
+                  'Confirm the node exists and is visible'
                 ],
                 urlFormat: 'https://www.figma.com/design/{fileId}/{name}?node-id={nodeId}'
               }
@@ -584,21 +686,20 @@ class FigmaMCPServer {
         ],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      console.error(`获取节点图片失败: ${errorMessage}`);
-      
+      const sanitizedMessage = sanitizeErrorForResponse(error, 'get_node_images');
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               success: false,
-              error: errorMessage,
+              error: sanitizedMessage,
               troubleshooting: {
                 commonIssues: [
-                  '检查Figma URL是否包含node-id参数',
-                  '确认节点中是否包含图片资源',
-                  '验证对该文件是否有访问权限',
+                  'Ensure the Figma URL contains a node-id parameter',
+                  'Confirm the node contains image resources',
+                  'Verify you have access to the file',
                 ],
                 urlFormat: 'https://www.figma.com/design/{fileId}/{name}?node-id={nodeId}'
               }
@@ -650,21 +751,20 @@ class FigmaMCPServer {
         ],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      console.error(`获取SVG数据失败: ${errorMessage}`);
-      
+      const sanitizedMessage = sanitizeErrorForResponse(error, 'get_node_svg');
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               success: false,
-              error: errorMessage,
+              error: sanitizedMessage,
               troubleshooting: {
                 commonIssues: [
-                  '检查节点是否为矢量图形或可导出为SVG',
-                  '确认Figma token权限是否充足',
-                  '验证节点ID格式是否正确',
+                  'Ensure the node is a vector graphic or exportable as SVG',
+                  'Verify your Figma token has sufficient permissions',
+                  'Check that the node ID format is correct',
                 ],
               }
             }, null, 2),
@@ -730,23 +830,22 @@ class FigmaMCPServer {
         ],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      console.error(`提取设计元素失败: ${errorMessage}`);
-      
+      const sanitizedMessage = sanitizeErrorForResponse(error, 'extract_node_elements');
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               success: false,
-              error: errorMessage,
+              error: sanitizedMessage,
               troubleshooting: {
                 commonIssues: [
-                  '检查Figma URL是否包含node-id参数',
-                  '确认对该文件和节点有访问权限',
-                  '验证节点是否存在且包含设计元素',
+                  'Ensure the Figma URL contains a node-id parameter',
+                  'Verify you have access to the file and node',
+                  'Confirm the node exists and contains design elements',
                 ],
-                tip: '使用includeDetails=true获取详细的元素信息'
+                tip: 'Use includeDetails=true to get detailed element information'
               }
             }, null, 2),
           },
