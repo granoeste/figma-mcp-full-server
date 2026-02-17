@@ -224,12 +224,25 @@ export class FigmaService {
 
   /**
    * 递归遍历节点树，收集所有子节点
+   * Security: Depth limit to prevent stack overflow from malicious deeply nested structures
    */
-  traverseNodeTree(node: FigmaNode, collector: (node: FigmaNode) => void) {
+  private static readonly MAX_RECURSION_DEPTH = 100;
+
+  traverseNodeTree(
+    node: FigmaNode,
+    collector: (node: FigmaNode) => void,
+    currentDepth: number = 0
+  ): void {
+    // Security: Prevent stack overflow from deeply nested structures
+    if (currentDepth > FigmaService.MAX_RECURSION_DEPTH) {
+      console.error(`Warning: Maximum recursion depth (${FigmaService.MAX_RECURSION_DEPTH}) exceeded, skipping deeper nodes`);
+      return;
+    }
+
     collector(node);
     if (node.children) {
       for (const child of node.children) {
-        this.traverseNodeTree(child, collector);
+        this.traverseNodeTree(child, collector, currentDepth + 1);
       }
     }
   }
