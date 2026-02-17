@@ -249,7 +249,10 @@ export class FigmaService {
 
   /**
    * 获取节点的SVG数据
+   * Security: Response size limit to prevent memory exhaustion
    */
+  private static readonly MAX_SVG_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB
+
   async getNodeAsSVG(fileId: string, nodeId: string): Promise<string> {
     try {
       const images = await this.exportImage(fileId, [nodeId], { format: 'svg' });
@@ -262,10 +265,24 @@ export class FigmaService {
       // Security: Validate URL before fetching (SSRF protection)
       this.validateExternalUrl(svgUrl);
 
-      // 下载SVG内容
-      const response = await axios.get(svgUrl);
-      return response.data;
+      // 下载SVG内容 with size limit
+      const response = await axios.get(svgUrl, {
+        maxContentLength: FigmaService.MAX_SVG_SIZE_BYTES,
+        maxBodyLength: FigmaService.MAX_SVG_SIZE_BYTES,
+      });
+
+      // Additional check for response size
+      const svgData = response.data;
+      const dataSize = typeof svgData === 'string' ? Buffer.byteLength(svgData, 'utf8') : 0;
+      if (dataSize > FigmaService.MAX_SVG_SIZE_BYTES) {
+        throw new Error(`SVG data exceeds maximum size limit (${FigmaService.MAX_SVG_SIZE_BYTES / 1024 / 1024} MB)`);
+      }
+
+      return svgData;
     } catch (error) {
+      if (axios.isAxiosError(error) && error.message.includes('maxContentLength')) {
+        throw new Error(`SVG data exceeds maximum size limit (${FigmaService.MAX_SVG_SIZE_BYTES / 1024 / 1024} MB)`);
+      }
       throw new Error(`获取SVG数据失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   }
